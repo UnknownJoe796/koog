@@ -1,11 +1,11 @@
-package ai.koog.prompt.executor.clients.bedrock.modelfamilies.ai21
+package ai.koog.prompt.executor.clients.bedrock.modelfamilies.moonshot
 
 import ai.koog.agents.core.tools.ToolDescriptor
 import ai.koog.agents.core.tools.ToolParameterDescriptor
 import ai.koog.agents.core.tools.ToolParameterType
 import ai.koog.prompt.dsl.Prompt
 import ai.koog.prompt.executor.clients.bedrock.BedrockModels
-import ai.koog.prompt.executor.clients.bedrock.modelfamilies.ai21.JambaRequest.Companion.MAX_TOKENS_DEFAULT
+import ai.koog.prompt.executor.clients.bedrock.modelfamilies.moonshot.KimiRequest.Companion.MAX_TOKENS_DEFAULT
 import ai.koog.prompt.llm.LLMCapability
 import ai.koog.prompt.llm.LLMProvider
 import ai.koog.prompt.llm.LLModel
@@ -21,19 +21,19 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
-class BedrockAI21JambaSerializationTest {
+class BedrockMoonshotKimiSerializationTest {
 
     private val mockClock = object : Clock {
         override fun now(): Instant = Clock.System.now()
     }
 
-    private val model = BedrockModels.AI21JambaMini
+    private val model = BedrockModels.MoonshotKimiK2Thinking
     private val systemMessage = "You are a helpful assistant."
     private val userMessage = "Tell me about Paris."
     private val toolName = "get_weather"
 
     @Test
-    fun `createJambaRequest with basic prompt`() {
+    fun `createKimiRequest with basic prompt`() {
         val temperature = 0.7
 
         val prompt = Prompt.build("test", params = LLMParams(temperature = temperature)) {
@@ -41,12 +41,13 @@ class BedrockAI21JambaSerializationTest {
             user(userMessage)
         }
 
-        val request = BedrockAI21JambaSerialization.createJambaRequest(prompt, model, emptyList())
+        val request = BedrockMoonshotKimiSerialization.createKimiRequest(prompt, model, emptyList())
 
         assertNotNull(request)
         assertEquals(model.id, request.model)
         assertEquals(MAX_TOKENS_DEFAULT, request.maxTokens)
         assertEquals(temperature, request.temperature)
+        assertEquals(true, request.reasoning)
 
         assertEquals(2, request.messages.size)
 
@@ -58,23 +59,7 @@ class BedrockAI21JambaSerializationTest {
     }
 
     @Test
-    fun `createJambaRequest with custom maxTokens`() {
-        val maxTokens = 1000
-
-        val prompt = Prompt.build("test", params = LLMParams(maxTokens = maxTokens)) {
-            system(systemMessage)
-            user(userMessage)
-        }
-
-        val request = BedrockAI21JambaSerialization.createJambaRequest(prompt, model, emptyList())
-
-        assertNotNull(request)
-        assertEquals(model.id, request.model)
-        assertEquals(MAX_TOKENS_DEFAULT, request.maxTokens)
-    }
-
-    @Test
-    fun `createJambaRequest with conversation history`() {
+    fun `createKimiRequest with conversation history`() {
         val userNewMessage = "Hello, who are you?"
         val assistantMessage = "I'm an AI assistant. How can I help you today?"
 
@@ -85,7 +70,7 @@ class BedrockAI21JambaSerializationTest {
             user(userMessage)
         }
 
-        val request = BedrockAI21JambaSerialization.createJambaRequest(prompt, model, emptyList())
+        val request = BedrockMoonshotKimiSerialization.createKimiRequest(prompt, model, emptyList())
 
         assertNotNull(request)
 
@@ -105,7 +90,7 @@ class BedrockAI21JambaSerializationTest {
     }
 
     @Test
-    fun `createJambaRequest with tools`() {
+    fun `createKimiRequest with tools`() {
         val description = "Get current weather for a city"
 
         val tools = listOf(
@@ -125,7 +110,7 @@ class BedrockAI21JambaSerializationTest {
             user("What's the weather in Paris?")
         }
 
-        val request = BedrockAI21JambaSerialization.createJambaRequest(prompt, model, tools)
+        val request = BedrockMoonshotKimiSerialization.createKimiRequest(prompt, model, tools)
 
         assertNotNull(request)
 
@@ -143,24 +128,24 @@ class BedrockAI21JambaSerializationTest {
     }
 
     @Test
-    fun `createJambaRequest default temperature`() {
+    fun `createKimiRequest default temperature`() {
         val prompt = Prompt.build("test") {
             user("Tell me a story.")
         }
 
-        val request = BedrockAI21JambaSerialization.createJambaRequest(prompt, model, emptyList())
+        val request = BedrockMoonshotKimiSerialization.createKimiRequest(prompt, model, emptyList())
         assertEquals(null, request.temperature)
     }
 
     @Test
-    fun `createJambaRequest respects model temperature capability`() {
+    fun `createKimiRequest respects model temperature capability`() {
         val temperature = 0.3
 
         val promptWithTemperature = Prompt.build("test", params = LLMParams(temperature = temperature)) {
             user("Tell me a story.")
         }
 
-        val request = BedrockAI21JambaSerialization.createJambaRequest(promptWithTemperature, model, emptyList())
+        val request = BedrockMoonshotKimiSerialization.createKimiRequest(promptWithTemperature, model, emptyList())
         assertEquals(temperature, request.temperature)
 
         val modelWithoutTemperature = LLModel(
@@ -170,7 +155,7 @@ class BedrockAI21JambaSerializationTest {
             contextLength = 1_000L,
         )
 
-        val requestWithoutTemp = BedrockAI21JambaSerialization.createJambaRequest(
+        val requestWithoutTemp = BedrockMoonshotKimiSerialization.createKimiRequest(
             promptWithTemperature,
             modelWithoutTemperature,
             emptyList()
@@ -179,14 +164,28 @@ class BedrockAI21JambaSerializationTest {
     }
 
     @Test
-    fun `parseJambaResponse with text content`() {
-        // language=text
+    fun `createKimiRequest with reasoning disabled`() {
+        val prompt = Prompt.build("test") {
+            user("Tell me a story.")
+        }
+
+        val request = BedrockMoonshotKimiSerialization.createKimiRequest(
+            prompt,
+            model,
+            emptyList(),
+            enableReasoning = false
+        )
+        assertEquals(null, request.reasoning)
+    }
+
+    @Test
+    fun `parseKimiResponse with text content`() {
         val responseContent = "Paris is the capital of France"
         // language=json
         val responseJson = """
             {
                 "id": "resp_01234567",
-                "model": "ai21.jamba-1-5-large-v1:0",
+                "model": "moonshot.kimi-k2-thinking",
                 "choices": [
                     {
                         "index": 0,
@@ -205,7 +204,7 @@ class BedrockAI21JambaSerializationTest {
             }
         """.trimIndent()
 
-        val messages = BedrockAI21JambaSerialization.parseJambaResponse(responseJson, mockClock)
+        val messages = BedrockMoonshotKimiSerialization.parseKimiResponse(responseJson, mockClock)
 
         assertNotNull(messages)
         assertEquals(1, messages.size)
@@ -221,14 +220,58 @@ class BedrockAI21JambaSerializationTest {
     }
 
     @Test
-    fun `parseJambaResponse with tool call content`() {
-        // language=text
+    fun `parseKimiResponse with reasoning content`() {
+        val reasoningContent = "Let me think about this step by step..."
+        val responseContent = "Paris is the capital of France."
+        // language=json
+        val responseJson = """
+            {
+                "id": "resp_01234567",
+                "model": "moonshot.kimi-k2-thinking",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "reasoning_content": "$reasoningContent",
+                            "content": "$responseContent"
+                        },
+                        "finish_reason": "stop"
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 25,
+                    "completion_tokens": 50,
+                    "total_tokens": 75,
+                    "reasoning_tokens": 30
+                }
+            }
+        """.trimIndent()
+
+        val messages = BedrockMoonshotKimiSerialization.parseKimiResponse(responseJson, mockClock)
+
+        assertNotNull(messages)
+        assertEquals(2, messages.size)
+
+        // First message should be reasoning
+        val reasoning = messages[0]
+        assertTrue(reasoning is Message.Reasoning, "First message should be Reasoning, was: ${reasoning::class.simpleName}")
+        assertEquals(reasoningContent, reasoning.content)
+
+        // Second message should be assistant text
+        val assistant = messages[1]
+        assertTrue(assistant is Message.Assistant)
+        assertEquals(responseContent, assistant.content)
+    }
+
+    @Test
+    fun `parseKimiResponse with tool call content`() {
         val callId = "call_01234567"
         // language=json
         val responseJson = """
             {
                 "id": "resp_01234567",
-                "model": "ai21.jamba-1-5-large-v1:0",
+                "model": "moonshot.kimi-k2-thinking",
                 "choices": [
                     {
                         "index": 0,
@@ -256,7 +299,7 @@ class BedrockAI21JambaSerializationTest {
             }
         """.trimIndent()
 
-        val messages = BedrockAI21JambaSerialization.parseJambaResponse(responseJson, mockClock)
+        val messages = BedrockMoonshotKimiSerialization.parseKimiResponse(responseJson, mockClock)
 
         assertNotNull(messages)
         assertEquals(1, messages.size)
@@ -272,23 +315,21 @@ class BedrockAI21JambaSerializationTest {
     }
 
     @Test
-    fun `parseJambaResponse with both text and tool calls`() {
-        // language=text
-        val message = "I'll check the weather for you."
-        // language=text
+    fun `parseKimiResponse with both text and tool calls`() {
+        val textContent = "I'll check the weather for you."
         val callId = "call_01234567"
 
         // language=json
         val responseJson = """
             {
                 "id": "resp_01234567",
-                "model": "ai21.jamba-1-5-large-v1:0",
+                "model": "moonshot.kimi-k2-thinking",
                 "choices": [
                     {
                         "index": 0,
                         "message": {
                             "role": "assistant",
-                            "content": "$message",
+                            "content": "$textContent",
                             "tool_calls": [
                                 {
                                     "id": "$callId",
@@ -311,14 +352,14 @@ class BedrockAI21JambaSerializationTest {
             }
         """.trimIndent()
 
-        val messages = BedrockAI21JambaSerialization.parseJambaResponse(responseJson, mockClock)
+        val messages = BedrockMoonshotKimiSerialization.parseKimiResponse(responseJson, mockClock)
 
         assertNotNull(messages)
         assertEquals(2, messages.size)
 
-        val textMessage = messages[0]
-        assertTrue(textMessage is Message.Assistant)
-        assertEquals(message, textMessage.content)
+        val assistantMessage = messages[0]
+        assertTrue(assistantMessage is Message.Assistant)
+        assertEquals(textContent, assistantMessage.content)
 
         val toolMessage = messages[1]
         assertTrue(toolMessage is Message.Tool.Call)
@@ -327,7 +368,7 @@ class BedrockAI21JambaSerializationTest {
     }
 
     @Test
-    fun testParseJambaStreamChunk() {
+    fun `parseKimiStreamChunk with content delta`() {
         val chunkJson = """
             {
                 "id": "resp_01234567",
@@ -342,12 +383,32 @@ class BedrockAI21JambaSerializationTest {
             }
         """.trimIndent()
 
-        val content = BedrockAI21JambaSerialization.parseJambaStreamChunk(chunkJson)
+        val content = BedrockMoonshotKimiSerialization.parseKimiStreamChunk(chunkJson)
         assertEquals(listOf("Paris is ").map(StreamFrame::Append), content)
     }
 
     @Test
-    fun `parseJambaStreamChunk with empty content`() {
+    fun `parseKimiStreamChunk with reasoning content delta`() {
+        val chunkJson = """
+            {
+                "id": "resp_01234567",
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "reasoning_content": "Let me think..."
+                        }
+                    }
+                ]
+            }
+        """.trimIndent()
+
+        val content = BedrockMoonshotKimiSerialization.parseKimiStreamChunk(chunkJson)
+        assertEquals(listOf("Let me think...").map(StreamFrame::Append), content)
+    }
+
+    @Test
+    fun `parseKimiStreamChunk with empty content`() {
         val chunkJson = """
             {
                 "id": "resp_01234567",
@@ -362,12 +423,12 @@ class BedrockAI21JambaSerializationTest {
             }
         """.trimIndent()
 
-        val content = BedrockAI21JambaSerialization.parseJambaStreamChunk(chunkJson)
+        val content = BedrockMoonshotKimiSerialization.parseKimiStreamChunk(chunkJson)
         assertEquals(listOf("").map(StreamFrame::Append), content)
     }
 
     @Test
-    fun `parseJambaStreamChunk with null content`() {
+    fun `parseKimiStreamChunk with null content`() {
         val chunkJson = """
             {
                 "id": "resp_01234567",
@@ -382,7 +443,73 @@ class BedrockAI21JambaSerializationTest {
             }
         """.trimIndent()
 
-        val content = BedrockAI21JambaSerialization.parseJambaStreamChunk(chunkJson)
+        val content = BedrockMoonshotKimiSerialization.parseKimiStreamChunk(chunkJson)
         assertEquals(emptyList(), content)
+    }
+
+    @Test
+    fun `parseKimiStreamChunk with finish reason`() {
+        val chunkJson = """
+            {
+                "id": "resp_01234567",
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {},
+                        "finish_reason": "stop"
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 20,
+                    "total_tokens": 30
+                }
+            }
+        """.trimIndent()
+
+        val frames = BedrockMoonshotKimiSerialization.parseKimiStreamChunk(chunkJson, mockClock)
+        assertEquals(1, frames.size)
+        assertTrue(frames[0] is StreamFrame.End)
+
+        val endFrame = frames[0] as StreamFrame.End
+        assertEquals("stop", endFrame.finishReason)
+        assertEquals(10, endFrame.metaInfo.inputTokensCount)
+        assertEquals(20, endFrame.metaInfo.outputTokensCount)
+        assertEquals(30, endFrame.metaInfo.totalTokensCount)
+    }
+
+    @Test
+    fun `parseKimiStreamChunk with tool call`() {
+        val callId = "call_01234567"
+        val chunkJson = """
+            {
+                "id": "resp_01234567",
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "id": "$callId",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "$toolName",
+                                        "arguments": "{\"city\":\"Paris\"}"
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        """.trimIndent()
+
+        val frames = BedrockMoonshotKimiSerialization.parseKimiStreamChunk(chunkJson)
+        assertEquals(1, frames.size)
+        assertTrue(frames[0] is StreamFrame.ToolCall)
+
+        val toolCallFrame = frames[0] as StreamFrame.ToolCall
+        assertEquals(callId, toolCallFrame.id)
+        assertEquals(toolName, toolCallFrame.name)
     }
 }

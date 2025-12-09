@@ -53,4 +53,10 @@ public sealed class BedrockModelFamilies(
      */
     @Serializable
     public data object Cohere : BedrockModelFamilies("bedrock.cohere", "AWS Bedrock (Cohere Embeddings)")
+
+    /**
+     * Represents the Moonshot AI sub-provider under AWS Bedrock for Kimi models.
+     */
+    @Serializable
+    public data object MoonshotKimi : BedrockModelFamilies("bedrock.moonshot", "AWS Bedrock (Moonshot Kimi)")
 }

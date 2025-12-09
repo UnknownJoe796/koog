@@ -51,6 +51,7 @@ dependencies {
 kotlin {
 	compilerOptions {
 		freeCompilerArgs.addAll("-Xjsr305=strict")
+        optIn.add("kotlin.time.ExperimentalTime")
 	}
 }
 

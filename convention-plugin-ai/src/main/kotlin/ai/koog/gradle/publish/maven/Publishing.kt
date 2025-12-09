@@ -5,6 +5,8 @@ import org.gradle.api.Project
 import org.gradle.api.artifacts.dsl.RepositoryHandler
 import org.gradle.api.publish.PublishingExtension
 import org.gradle.api.publish.maven.MavenPublication
+import java.io.File
+import java.net.URI
 import java.net.URL
 
 object Publishing {
@@ -12,6 +14,7 @@ object Publishing {
         publishTo({
             it.graziePublic(project)
             it.artifactsMaven(project)
+            it.s3Maven(project)
         }) {
             it.publications(
                 Action {
@@ -117,5 +120,106 @@ object Publishing {
                 )
             }
         )
+    }
+
+    private fun RepositoryHandler.s3Maven(project: Project) {
+        maven(
+            Action {
+                val repo = this
+
+                repo.name = "S3Maven"
+                repo.url = URI.create("s3://lightningkite-maven")
+
+                // Check if explicit credentials are provided
+                val explicitAccessKey = project.properties["awsAccessKeyId"]?.toString()
+                    ?: System.getenv("AWS_ACCESS_KEY_ID")
+                val explicitSecretKey = project.properties["awsSecretAccessKey"]?.toString()
+                    ?: System.getenv("AWS_SECRET_ACCESS_KEY")
+
+                if (explicitAccessKey != null && explicitSecretKey != null) {
+                    // Use explicit credentials if provided
+                    repo.credentials(org.gradle.api.credentials.AwsCredentials::class.java,
+                        Action {
+                            val cred = this
+                            cred.accessKey = explicitAccessKey
+                            cred.secretKey = explicitSecretKey
+
+                            val sessionToken = project.properties["awsSessionToken"]?.toString()
+                                ?: System.getenv("AWS_SESSION_TOKEN")
+                            if (sessionToken != null) {
+                                cred.sessionToken = sessionToken
+                            }
+                        }
+                    )
+                } else {
+                    // Read credentials from AWS credentials file
+                    val awsProfile = project.properties["awsProfile"]?.toString()
+                        ?: System.getenv("AWS_PROFILE")
+                        ?: "lk"
+
+                    val credentials = readAwsCredentials(awsProfile)
+                    if (credentials != null) {
+                        repo.credentials(org.gradle.api.credentials.AwsCredentials::class.java,
+                            Action {
+                                val cred = this
+                                cred.accessKey = credentials.accessKeyId
+                                cred.secretKey = credentials.secretAccessKey
+                                if (credentials.sessionToken != null) {
+                                    cred.sessionToken = credentials.sessionToken
+                                }
+                            }
+                        )
+                    } else {
+                        project.logger.warn("Could not find AWS credentials for profile '$awsProfile'")
+                    }
+                }
+            }
+        )
+    }
+
+    private data class AwsCredentials(
+        val accessKeyId: String,
+        val secretAccessKey: String,
+        val sessionToken: String? = null
+    )
+
+    private fun readAwsCredentials(profileName: String): AwsCredentials? {
+        val homeDir = System.getProperty("user.home")
+        val credentialsFile = File(homeDir, ".aws/credentials")
+
+        if (!credentialsFile.exists()) {
+            return null
+        }
+
+        var inProfile = false
+        var accessKeyId: String? = null
+        var secretAccessKey: String? = null
+        var sessionToken: String? = null
+
+        credentialsFile.readLines().forEach { line ->
+            val trimmedLine = line.trim()
+
+            when {
+                trimmedLine.startsWith("[") && trimmedLine.endsWith("]") -> {
+                    val currentProfile = trimmedLine.substring(1, trimmedLine.length - 1)
+                    inProfile = currentProfile == profileName
+                }
+                inProfile && trimmedLine.startsWith("aws_access_key_id") -> {
+                    accessKeyId = trimmedLine.substringAfter("=").trim()
+                }
+                inProfile && trimmedLine.startsWith("aws_secret_access_key") -> {
+                    secretAccessKey = trimmedLine.substringAfter("=").trim()
+                }
+                inProfile && trimmedLine.startsWith("aws_session_token") -> {
+                    sessionToken = trimmedLine.substringAfter("=").trim()
+                }
+            }
+        }
+
+        return if (accessKeyId != null && secretAccessKey != null) {
+            AwsCredentials(accessKeyId!!, secretAccessKey!!, sessionToken)
+        } else {
+            null
+        }
     }
 }

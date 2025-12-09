@@ -1,9 +1,11 @@
 import org.gradle.accessors.dm.LibrariesForLibs
+import org.gradle.kotlin.dsl.add
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinProjectExtension
 import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
+import kotlin.text.set
 
 val libs = the<LibrariesForLibs>()
 
@@ -51,6 +53,7 @@ tasks.withType<KotlinCompilationTask<*>>().configureEach {
         logger.info("'$path' Kotlin language version: $kotlinLanguageVersion")
         apiVersion.set(kotlinApiVersion)
         logger.info("'$path' Kotlin API version: $kotlinApiVersion")
+        optIn.add("kotlin.time.ExperimentalTime")
     }
 }
 
@@ -58,6 +61,7 @@ tasks.withType<KotlinJvmCompile>().configureEach {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_11)
         freeCompilerArgs.add("-Xjvm-default=all")
+        optIn.add("kotlin.time.ExperimentalTime")
     }
 }
 

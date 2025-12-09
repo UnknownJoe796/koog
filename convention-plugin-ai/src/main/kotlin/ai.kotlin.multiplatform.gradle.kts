@@ -56,6 +56,7 @@ kotlin {
     }
 
     compilerOptions {
+        optIn.add("kotlin.time.ExperimentalTime")
         coreLibrariesVersion = "2.1.21"
     }
 }

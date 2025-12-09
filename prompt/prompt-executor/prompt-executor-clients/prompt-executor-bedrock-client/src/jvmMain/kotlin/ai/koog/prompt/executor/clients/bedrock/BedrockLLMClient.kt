@@ -19,6 +19,8 @@ import ai.koog.prompt.executor.clients.bedrock.modelfamilies.anthropic.BedrockAn
 import ai.koog.prompt.executor.clients.bedrock.modelfamilies.cohere.BedrockCohereSerialization
 import ai.koog.prompt.executor.clients.bedrock.modelfamilies.meta.BedrockMetaLlamaSerialization
 import ai.koog.prompt.executor.clients.bedrock.modelfamilies.meta.LlamaRequest
+import ai.koog.prompt.executor.clients.bedrock.modelfamilies.moonshot.BedrockMoonshotKimiSerialization
+import ai.koog.prompt.executor.clients.bedrock.modelfamilies.moonshot.KimiRequest
 import ai.koog.prompt.llm.LLMCapability
 import ai.koog.prompt.llm.LLMProvider
 import ai.koog.prompt.llm.LLModel
@@ -57,7 +59,7 @@ import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.withContext
-import kotlinx.datetime.Clock
+import kotlin.time.Clock
 import kotlinx.serialization.json.Json
 
 /**
@@ -161,6 +163,7 @@ public class BedrockLLMClient(
             model.id.contains("meta.llama") -> BedrockModelFamilies.Meta
             model.id.contains("amazon.titan") -> BedrockModelFamilies.TitanEmbedding
             model.id.contains("cohere.embed") -> BedrockModelFamilies.Cohere
+            model.id.contains("moonshot.kimi") -> BedrockModelFamilies.MoonshotKimi
             else -> throw LLMClientException(clientName, "Model ${model.id} is not a supported Bedrock model")
         }
     }
@@ -220,6 +223,11 @@ public class BedrockLLMClient(
                     )
 
                     is BedrockModelFamilies.Meta -> BedrockMetaLlamaSerialization.parseLlamaResponse(
+                        responseBodyString,
+                        clock
+                    )
+
+                    is BedrockModelFamilies.MoonshotKimi -> BedrockMoonshotKimiSerialization.parseKimiResponse(
                         responseBodyString,
                         clock
                     )
@@ -305,6 +313,7 @@ public class BedrockLLMClient(
                     )
 
                     is BedrockModelFamilies.Meta -> BedrockMetaLlamaSerialization.parseLlamaStreamChunk(chunkJsonString)
+                    is BedrockModelFamilies.MoonshotKimi -> BedrockMoonshotKimiSerialization.parseKimiStreamChunk(chunkJsonString)
                     is BedrockModelFamilies.TitanEmbedding, is BedrockModelFamilies.Cohere ->
                         throw LLMClientException(clientName, "Embedding models do not support streaming chat completions. Use embed() instead.")
                 }
@@ -392,6 +401,11 @@ public class BedrockLLMClient(
             is BedrockModelFamilies.Meta -> json.encodeToString(
                 LlamaRequest.serializer(),
                 BedrockMetaLlamaSerialization.createLlamaRequest(prompt, model)
+            )
+
+            is BedrockModelFamilies.MoonshotKimi -> json.encodeToString(
+                KimiRequest.serializer(),
+                BedrockMoonshotKimiSerialization.createKimiRequest(prompt, model, tools)
             )
 
             is BedrockModelFamilies.TitanEmbedding,

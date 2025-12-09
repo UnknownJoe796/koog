@@ -1,4 +1,4 @@
-package ai.koog.prompt.executor.clients.bedrock.modelfamilies.ai21
+package ai.koog.prompt.executor.clients.bedrock.modelfamilies.moonshot
 
 import ai.koog.agents.core.tools.ToolDescriptor
 import ai.koog.prompt.dsl.Prompt
@@ -15,7 +15,15 @@ import kotlinx.serialization.json.put
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
-internal object BedrockAI21JambaSerialization {
+/**
+ * Serialization utilities for Moonshot Kimi K2 models on AWS Bedrock.
+ *
+ * Kimi K2 uses an OpenAI-compatible API format with additional support for:
+ * - Extended reasoning/thinking mode via the `reasoning` parameter
+ * - Tool calling with function support
+ * - Streaming responses including reasoning content
+ */
+internal object BedrockMoonshotKimiSerialization {
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -23,34 +31,57 @@ internal object BedrockAI21JambaSerialization {
         explicitNulls = false
     }
 
+    /**
+     * Creates a Kimi request from a prompt and model configuration.
+     *
+     * @param prompt The prompt to convert
+     * @param model The model to use (affects temperature capability check)
+     * @param tools List of available tools for function calling
+     * @param enableReasoning Whether to enable extended thinking mode (defaults to true for Thinking models)
+     */
     @OptIn(ExperimentalUuidApi::class)
-    internal fun createJambaRequest(prompt: Prompt, model: LLModel, tools: List<ToolDescriptor>): JambaRequest {
-        val messages = mutableListOf<JambaMessage>()
+    internal fun createKimiRequest(
+        prompt: Prompt,
+        model: LLModel,
+        tools: List<ToolDescriptor>,
+        enableReasoning: Boolean = true
+    ): KimiRequest {
+        val messages = mutableListOf<KimiMessage>()
 
         prompt.messages.forEach { msg ->
             when (msg) {
                 is Message.System -> messages.add(
-                    JambaMessage(role = "system", content = msg.content)
+                    KimiMessage(role = "system", content = msg.content)
                 )
 
                 is Message.User -> messages.add(
-                    JambaMessage(role = "user", content = msg.content)
+                    KimiMessage(role = "user", content = msg.content)
                 )
 
                 is Message.Assistant -> messages.add(
-                    JambaMessage(role = "assistant", content = msg.content)
+                    KimiMessage(role = "assistant", content = msg.content)
                 )
 
-                is Message.Reasoning -> throw NotImplementedError("Reasoning is not supported by Jamba")
+                is Message.Reasoning -> {
+                    // Kimi K2 reasoning content is part of the assistant message
+                    // When replaying history, include reasoning as a separate assistant message
+                    messages.add(
+                        KimiMessage(
+                            role = "assistant",
+                            reasoningContent = msg.content,
+                            content = null
+                        )
+                    )
+                }
 
                 is Message.Tool.Call -> {
                     // Find or create assistant message with tool calls
                     val lastMessage = messages.lastOrNull()
                     if (lastMessage?.role == "assistant" && lastMessage.toolCalls != null) {
                         // Add to existing tool calls
-                        val updatedToolCalls = lastMessage.toolCalls + JambaToolCall(
+                        val updatedToolCalls = lastMessage.toolCalls + KimiToolCall(
                             id = msg.id ?: Uuid.random().toString(),
-                            function = JambaFunctionCall(
+                            function = KimiFunctionCall(
                                 name = msg.tool,
                                 arguments = msg.content
                             )
@@ -59,13 +90,13 @@ internal object BedrockAI21JambaSerialization {
                     } else {
                         // Create new assistant message with tool call
                         messages.add(
-                            JambaMessage(
+                            KimiMessage(
                                 role = "assistant",
                                 content = null,
                                 toolCalls = listOf(
-                                    JambaToolCall(
+                                    KimiToolCall(
                                         id = msg.id ?: Uuid.random().toString(),
-                                        function = JambaFunctionCall(
+                                        function = KimiFunctionCall(
                                             name = msg.tool,
                                             arguments = msg.content
                                         )
@@ -77,7 +108,7 @@ internal object BedrockAI21JambaSerialization {
                 }
 
                 is Message.Tool.Result -> messages.add(
-                    JambaMessage(
+                    KimiMessage(
                         role = "tool",
                         content = msg.content,
                         toolCallId = msg.id ?: Uuid.random().toString()
@@ -86,10 +117,10 @@ internal object BedrockAI21JambaSerialization {
             }
         }
 
-        val jambaTools = if (tools.isNotEmpty()) {
+        val kimiTools = if (tools.isNotEmpty()) {
             tools.map { tool ->
-                JambaTool(
-                    function = JambaFunction(
+                KimiTool(
+                    function = KimiFunction(
                         name = tool.name,
                         description = tool.description,
                         parameters = buildJsonObject {
@@ -120,40 +151,59 @@ internal object BedrockAI21JambaSerialization {
             null
         }
 
-        return JambaRequest(
+        return KimiRequest(
             model = model.id,
             messages = messages,
-            maxTokens = JambaRequest.MAX_TOKENS_DEFAULT,
-            temperature = if (model.capabilities.contains(
-                    LLMCapability.Temperature
-                )
-            ) {
+            maxTokens = KimiRequest.MAX_TOKENS_DEFAULT,
+            temperature = if (model.capabilities.contains(LLMCapability.Temperature)) {
                 prompt.params.temperature
             } else {
                 null
             },
-            tools = jambaTools
+            tools = kimiTools,
+            reasoning = if (enableReasoning) true else null
         )
     }
 
-    @OptIn(ExperimentalUuidApi::class)
-    internal fun parseJambaResponse(responseBody: String, clock: Clock = Clock.System): List<Message.Response> {
-        val response = json.decodeFromString<JambaResponse>(responseBody)
+    /**
+     * Parses a Kimi response into a list of response messages.
+     *
+     * Handles:
+     * - Text content (as Assistant messages)
+     * - Reasoning content (as Reasoning messages)
+     * - Tool calls (as Tool.Call messages)
+     */
+    internal fun parseKimiResponse(responseBody: String, clock: Clock = Clock.System): List<Message.Response> {
+        val response = json.decodeFromString<KimiResponse>(responseBody)
 
         val metaInfo = parseMetaInfo(clock, response.usage)
 
         return response.choices.flatMap { choice ->
             val messages = mutableListOf<Message.Response>()
 
+            // Handle reasoning content first (if present)
+            choice.message.reasoningContent?.let { reasoningContent ->
+                if (reasoningContent.isNotEmpty()) {
+                    messages.add(
+                        Message.Reasoning(
+                            content = reasoningContent,
+                            metaInfo = metaInfo
+                        )
+                    )
+                }
+            }
+
             // Handle text content
             choice.message.content?.let { content ->
-                messages.add(
-                    Message.Assistant(
-                        content = content,
-                        finishReason = choice.finishReason,
-                        metaInfo = metaInfo
+                if (content.isNotEmpty()) {
+                    messages.add(
+                        Message.Assistant(
+                            content = content,
+                            finishReason = choice.finishReason,
+                            metaInfo = metaInfo
+                        )
                     )
-                )
+                }
             }
 
             // Handle tool calls
@@ -172,17 +222,34 @@ internal object BedrockAI21JambaSerialization {
         }
     }
 
-    internal fun parseJambaStreamChunk(chunkJsonString: String, clock: Clock = Clock.System): List<StreamFrame> {
-        val streamResponse = json.decodeFromString<JambaStreamResponse>(chunkJsonString)
+    /**
+     * Parses a Kimi streaming chunk into stream frames.
+     *
+     * Handles:
+     * - Content deltas (as Append frames)
+     * - Reasoning content deltas (as Append frames - streaming reasoning)
+     * - Tool call deltas (as ToolCall frames)
+     * - Finish reason (as End frame)
+     */
+    internal fun parseKimiStreamChunk(chunkJsonString: String, clock: Clock = Clock.System): List<StreamFrame> {
+        val streamResponse = json.decodeFromString<KimiStreamResponse>(chunkJsonString)
         return buildList {
             val choice = streamResponse.choices.firstOrNull()
             choice?.delta?.let { delta ->
+                // Handle reasoning content delta
+                delta.reasoningContent?.let { reasoning ->
+                    if (reasoning.isNotEmpty()) {
+                        add(StreamFrame.Append(reasoning))
+                    }
+                }
+                // Handle regular content delta
                 delta.content?.let(StreamFrame::Append)?.let(::add)
-                delta.toolCalls?.map { jambaToolCall ->
+                // Handle tool calls
+                delta.toolCalls?.map { kimiToolCall ->
                     StreamFrame.ToolCall(
-                        id = jambaToolCall.id,
-                        name = jambaToolCall.function.name,
-                        content = jambaToolCall.function.arguments
+                        id = kimiToolCall.id,
+                        name = kimiToolCall.function.name,
+                        content = kimiToolCall.function.arguments
                     )
                 }?.let(::addAll)
             }
@@ -199,7 +266,7 @@ internal object BedrockAI21JambaSerialization {
 
     private fun parseMetaInfo(
         clock: Clock,
-        usage: JambaUsage?
+        usage: KimiUsage?
     ): ResponseMetaInfo = ResponseMetaInfo.create(
         clock = clock,
         totalTokensCount = usage?.totalTokens,

@@ -11,6 +11,9 @@ plugins {
 
 kotlin {
     compilerOptions.allWarningsAsErrors.set(true)
+    compilerOptions {
+        optIn.add("kotlin.time.ExperimentalTime")
+    }
 }
 
 dependencies {

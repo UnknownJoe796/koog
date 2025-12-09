@@ -1,7 +1,7 @@
 package ai.koog.agents.features.sql.providers
 
 import ai.koog.agents.snapshot.providers.PersistenceStorageProvider
-import kotlinx.datetime.Instant
+import kotlin.time.Instant
 
 /**
  * Abstract base class for SQL-based implementations of [PersistenceStorageProvider].
