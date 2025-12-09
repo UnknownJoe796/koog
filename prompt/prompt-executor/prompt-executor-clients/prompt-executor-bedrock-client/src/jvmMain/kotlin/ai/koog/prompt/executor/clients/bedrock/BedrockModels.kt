@@ -692,8 +692,9 @@ public object BedrockModels : LLModelDefinitions {
             provider = LLMProvider.Bedrock,
             id = "moonshot.kimi-k2-thinking",
             capabilities = standardCapabilities + toolCapabilities,
-            contextLength = 131_072,
+            contextLength = 256_000,
         ),
+        inferenceProfilePrefix = null
     ).effectiveModel
 
     /**
